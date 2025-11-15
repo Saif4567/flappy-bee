@@ -10,7 +10,6 @@
         background: black;
         font-family: Arial, sans-serif;
     }
-
     #shareBtn {
         position: absolute;
         bottom: 20px;
@@ -34,7 +33,7 @@
 <script>
 // LOAD BACKGROUND TILE
 const bgTile = new Image();
-bgTile.src = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZAAAAGQCAIAAAAP3aGbAABIVUlEQVR4nO29W4x..."; // your image embedded
+bgTile.src = "data:image/png;base64,QjwShISOaqqSlRXIfWiqSBXqmvl9wchItF42Kf9oChABCj1NbEUqlwEYl7P42U3hbqExI0jQjmy9GdjYxNC0L0mCpZc+uNntn3FN176knrQDFxrfHotTUbB1MphvcpJtDZ5uT67uC7a57s73PqH7Af9tJpijp3J+x1VNCwVOJqtPcFu6ScTU7FqW4jfXFTM1WhQu4lrT7bqbLdnpVHXcO2Jf8KpE4zOH1OoFBg7PmvZQTtOmfr3FkDtpSeSdE6VaWtc5HWe6MmlSeypJyadLqXUmrR3L2FSL1bKXW9BnaRru7rUdW6ugqgVBiCXIQiSyFCCoVRQKEgqFEICiBCiBCiMZhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYhmEYxvPk/wc02+dzPuaKvgAAAABJRU5ErkJggg==";
 
 // CANVAS SETUP
 const canvas = document.getElementById("game");
@@ -72,7 +71,7 @@ const flapSound = new Audio("https://cdn.pixabay.com/audio/2022/03/15/audio_a6bb
 const pointSound = new Audio("https://cdn.pixabay.com/audio/2022/03/15/audio_1e44b81e9f.mp3");
 const dieSound = new Audio("https://cdn.pixabay.com/audio/2022/03/15/audio_4a8df21f69.mp3");
 
-// CREATE PIPE EVERY 2 SEC
+// PIPE CREATOR
 function createPipe() {
     if (!gameStarted || gameOver) return;
     let top = Math.random() * (canvas.height - pipeGap - 100) + 50;
@@ -99,13 +98,15 @@ function flap() {
 document.addEventListener("keydown", flap);
 document.addEventListener("touchstart", flap);
 
-// DRAW BACKGROUND (TILED)
+// DRAW BACKGROUND TILE
 function drawBackground() {
     let tileWidth = 200;
+
     for (let x = bgX; x < canvas.width + tileWidth; x += tileWidth) {
         ctx.drawImage(bgTile, x, 0, tileWidth, canvas.height);
     }
-    bgX -= 1.5;
+
+    bgX -= 2;
     if (bgX <= -200) bgX = 0;
 }
 
@@ -116,7 +117,6 @@ function drawBee() {
     ctx.arc(bee.x, bee.y, bee.size, 0, Math.PI * 2);
     ctx.fill();
 
-    // stripes
     ctx.fillStyle = "black";
     ctx.fillRect(bee.x - 10, bee.y - 10, 5, 20);
     ctx.fillRect(bee.x + 5, bee.y - 10, 5, 20);
@@ -136,12 +136,10 @@ function gameLoop() {
         return;
     }
 
-    // Bee physics
     bee.velocity += bee.gravity;
     bee.y += bee.velocity;
     drawBee();
 
-    // Pipes
     ctx.fillStyle = "#ffb6c1";
     pipes.forEach(pipe => {
         pipe.x -= 3;
@@ -149,14 +147,12 @@ function gameLoop() {
         ctx.fillRect(pipe.x, 0, pipeWidth, pipe.topHeight);
         ctx.fillRect(pipe.x, pipe.bottomY, pipeWidth, canvas.height - pipe.bottomY);
 
-        // Score
         if (!pipe.counted && pipe.x + pipeWidth < bee.x) {
             score++;
             pipe.counted = true;
             pointSound.play();
         }
 
-        // Collision detection
         if (
             bee.x + bee.size > pipe.x &&
             bee.x - bee.size < pipe.x + pipeWidth &&
@@ -166,12 +162,10 @@ function gameLoop() {
         }
     });
 
-    // Ground / ceiling
     if (bee.y + bee.size >= canvas.height || bee.y - bee.size <= 0) {
         endGame();
     }
 
-    // Draw Score
     ctx.fillStyle = "white";
     ctx.font = "35px Arial";
     ctx.fillText("Score: " + score, 20, 50);
@@ -197,9 +191,8 @@ function endGame() {
 
 // SHARE BUTTON
 document.getElementById("shareBtn").onclick = () => {
-    const url = encodeURIComponent(window.location.href);
     const msg = encodeURIComponent(`I scored ${score} in Flappy Bee! 🐝🔥`);
-    window.open(`https://twitter.com/intent/tweet?text=${msg}&url=${url}`, "_blank");
+    window.open(`https://twitter.com/intent/tweet?text=${msg}`, "_blank");
 };
 </script>
 
