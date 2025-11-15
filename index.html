@@ -1,212 +1,377 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<meta charset="UTF-8" />
-<title>Flappy Bee</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Flappy Bee — GENSYN</title>
 <style>
-    body {
-        margin: 0;
-        overflow: hidden;
-        background: black;
-        font-family: Arial, sans-serif;
-    }
-    #shareBtn {
-        position: absolute;
-        bottom: 20px;
-        left: 50%;
-        transform: translateX(-50%);
-        background: #1DA1F2;
-        color: white;
-        padding: 10px 20px;
-        border-radius: 8px;
-        display: none;
-        font-size: 18px;
-        cursor: pointer;
-    }
+  html,body { height:100%; margin:0; background:#0b0b0b; }
+  body { font-family: Arial, Helvetica, sans-serif; overflow:hidden; }
+  canvas { display:block; width:100vw; height:100vh; }
+  #shareBtn {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1DA1F2;
+    color: white;
+    padding: 10px 18px;
+    border-radius: 8px;
+    display: none;
+    font-size: 16px;
+    cursor: pointer;
+    z-index: 10;
+  }
+  #hint { position:absolute; top:10px; left:10px; color:white; font-size:18px; user-select:none; }
 </style>
 </head>
 <body>
-
 <canvas id="game"></canvas>
-<div id="shareBtn">Share Score on X</div>
+<div id="hint">Score: <span id="sc">0</span></div>
+<button id="shareBtn">Share Score on X</button>
 
 <script>
-// CANVAS SETUP
-const canvas = document.getElementById("game");
-const ctx = canvas.getContext("2d");
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
+// --------- Canvas setup ----------
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+let DPR = window.devicePixelRatio || 1;
 
-// GAME STATE
-let gameStarted = false;
+function resize() {
+  DPR = window.devicePixelRatio || 1;
+  canvas.width = Math.floor(window.innerWidth * DPR);
+  canvas.height = Math.floor(window.innerHeight * DPR);
+  canvas.style.width = window.innerWidth + 'px';
+  canvas.style.height = window.innerHeight + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+window.addEventListener('resize', resize);
+resize();
+
+// --------- Game state ----------
+let running = false;
 let gameOver = false;
-
-// SCORE
 let score = 0;
+document.getElementById('sc').innerText = score;
 
-// BACKGROUND SCROLL
+// physics
+const gravity = 0.55;
+const jumpPower = -9;
+const pipeSpeed = 3.2;
+
+// Bee pixel art (medium scale)
+const beePixel = [
+  // each number -> color index: 0=transparent,1=yellow,2=black,3=white,4=wing-shadow
+  // 11x9 pixel map (approx)
+  [0,0,1,1,1,1,1,1,0,0,0],
+  [0,1,1,1,1,1,1,1,1,0,0],
+  [1,1,2,1,1,1,1,2,1,1,0],
+  [1,1,2,1,3,3,1,2,1,1,0],
+  [1,1,2,1,1,1,1,2,1,1,0],
+  [0,1,1,1,1,1,1,1,1,0,0],
+  [0,0,1,1,1,1,1,1,0,0,0],
+  [0,0,0,2,2,0,2,2,0,0,0],
+  [0,0,0,0,0,0,0,0,0,0,0]
+];
+// color mapping
+const palette = {
+  1: '#FFD54A', // yellow
+  2: '#111111', // black
+  3: '#FFFFFF'  // white (wing)
+};
+
+let scaleBee = 3.6; // medium — tweak if needed
+
+// bee object
+const bee = {
+  x: 120,
+  y: canvas.height / DPR / 2,
+  vy: 0,
+  w: beePixel[0].length * scaleBee,
+  h: beePixel.length * scaleBee,
+};
+
+// pipes
+let pipes = [];
+const pipeGap = Math.max(120, Math.min(220, Math.floor((canvas.height/DPR) * 0.22)));
+const pipeWidth = 72;
+
+// background scroll
 let bgX = 0;
 
-// BEE
-let bee = {
-    x: 120,
-    y: canvas.height / 2,
-    size: 22,
-    velocity: 0,
-    gravity: 0.45,
-    jump: -8
-};
+// sounds (external audio OK)
+const flapSound = new Audio('https://cdn.pixabay.com/audio/2022/03/15/audio_a6bbc71c66.mp3');
+const pointSound = new Audio('https://cdn.pixabay.com/audio/2022/03/15/audio_1e44b81e9f.mp3');
+const dieSound = new Audio('https://cdn.pixabay.com/audio/2022/03/15/audio_4a8df21f69.mp3');
+flapSound.volume = 0.7; pointSound.volume = 0.7; dieSound.volume = 0.7;
 
-// PIPES
-let pipes = [];
-let pipeGap = 160;
-let pipeWidth = 70;
-
-// SOUNDS
-const flapSound = new Audio("https://cdn.pixabay.com/audio/2022/03/15/audio_a6bbc71c66.mp3");
-const pointSound = new Audio("https://cdn.pixabay.com/audio/2022/03/15/audio_1e44b81e9f.mp3");
-const dieSound = new Audio("https://cdn.pixabay.com/audio/2022/03/15/audio_4a8df21f69.mp3");
-
-// PIPE CREATOR
-function createPipe() {
-    if (!gameStarted || gameOver) return;
-
-    let top = Math.random() * (canvas.height - pipeGap - 100) + 50;
-
-    pipes.push({
-        x: canvas.width,
-        topHeight: top,
-        bottomY: top + pipeGap,
-        counted: false
-    });
-}
-setInterval(createPipe, 2000);
-
-// FLAP
+// controls
 function flap() {
-    if (!gameStarted) {
-        gameStarted = true;
-        return;
-    }
-    if (gameOver) return;
-    bee.velocity = bee.jump;
-    flapSound.play();
+  if (!running) { running = true; return; }
+  if (gameOver) return;
+  bee.vy = jumpPower;
+  try { flapSound.currentTime = 0; flapSound.play(); } catch(e){}
+}
+window.addEventListener('keydown', e => { if (e.code === 'Space' || e.code === 'ArrowUp') flap(); });
+window.addEventListener('touchstart', e => { e.preventDefault(); flap(); }, {passive:false});
+window.addEventListener('mousedown', flap);
+
+// create pipes periodically
+let pipeTimer = 0;
+function spawnPipe() {
+  const top = 60 + Math.random() * (canvas.height/DPR - pipeGap - 120);
+  pipes.push({ x: canvas.width/DPR + 40, top: top, passed:false });
+}
+setInterval(() => { if (running && !gameOver) spawnPipe(); }, 1600);
+
+// helpers: draw rounded square pixel frame corners
+function drawPixelCorner(x,y,size,scale, col) {
+  ctx.fillStyle = col;
+  // small pixel corner pattern
+  ctx.fillRect(x, y, scale, scale);
+  ctx.fillRect(x+scale, y, scale, scale);
+  ctx.fillRect(x, y+scale, scale, scale);
 }
 
-document.addEventListener("keydown", flap);
-document.addEventListener("touchstart", flap);
-
-// DRAW BACKGROUND
+// draw background: light green landscape + subtle hills + pixel frame + GENSYN dark brown
 function drawBackground() {
-    const tileSize = 50;
+  const w = canvas.width/DPR, h = canvas.height/DPR;
 
-    for (let x = bgX; x < canvas.width + tileSize; x += tileSize) {
-        for (let y = 0; y < canvas.height; y += tileSize) {
+  // gradient sky/ground
+  const g = ctx.createLinearGradient(0,0,0,h);
+  g.addColorStop(0, '#dbe9cf'); // center-ish light
+  g.addColorStop(0.6, '#c8d9a8'); // mid
+  g.addColorStop(1, '#b0c08a'); // bottom darker
+  ctx.fillStyle = g;
+  ctx.fillRect(0,0,w,h);
 
-            ctx.fillStyle = (x / tileSize + y / tileSize) % 2 === 0 
-                ? "#111" : "#222";
+  // subtle rolling hills (canvas shapes)
+  ctx.fillStyle = 'rgba(120,140,90,0.18)';
+  ctx.beginPath();
+  ctx.ellipse(w*0.2, h*0.9, w*0.8, h*0.4, Math.PI/6, 0, Math.PI*2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(w*0.8, h*0.95, w*0.7, h*0.45, -Math.PI/9, 0, Math.PI*2);
+  ctx.fill();
 
-            ctx.fillRect(x, y, tileSize, tileSize);
-        }
+  // pixel-ish vignette grid for subtle texture
+  const tile = 24;
+  for (let xx = - (bgX % tile); xx < w+tile; xx += tile) {
+    ctx.fillStyle = (Math.floor(xx/tile) % 2 === 0) ? 'rgba(255,255,255,0.01)' : 'rgba(0,0,0,0.02)';
+    ctx.fillRect(xx, 0, tile/2, h);
+  }
+  bgX -= 0.6;
+  if (bgX < -tile) bgX = 0;
+
+  // big centered "GENSYN" dark brown, low opacity (but darker)
+  ctx.fillStyle = 'rgba(75,46,18,0.18)'; // dark brown with low alpha
+  ctx.font = "bold 120px Arial Black";
+  ctx.textAlign = 'center';
+  ctx.fillText('GENSYN', w/2, h/2 + 10);
+
+  // decorative pixel corners (top-left & bottom-right)
+  const cornerCol = 'rgba(255,255,255,0.08)';
+  const s = 8;
+  // top-left pattern
+  drawPixelCorner(18,18,s,1,cornerCol);
+  ctx.fillRect(18+s*2, 18+s*0, s, s); // extra pixel
+  // bottom-right pattern
+  drawPixelCorner(w-34, h-34, s,1,cornerCol);
+  ctx.fillRect(w-34-(s*2), h-34+(s*0), s, s);
+}
+
+// draw medium pixel bee using beePixel map
+function drawBee(x,y) {
+  const px = scaleBee;
+  // body shadow (oval)
+  ctx.fillStyle = 'rgba(0,0,0,0.15)';
+  ctx.beginPath();
+  ctx.ellipse(x+px*beePixel[0].length/2, y + beePixel.length*px + 6, (beePixel[0].length*px)/1.6, px*1.8, 0,0,Math.PI*2);
+  ctx.fill();
+
+  for (let ry=0; ry<beePixel.length; ry++) {
+    for (let rx=0; rx<beePixel[0].length; rx++) {
+      const v = beePixel[ry][rx];
+      if (!v) continue;
+      ctx.fillStyle = palette[v] || '#000';
+      // small outline enhancement for clarity
+      if (v === 1) ctx.fillStyle = '#FFD54A';
+      ctx.fillRect(Math.round(x + rx*px), Math.round(y + ry*px), Math.ceil(px), Math.ceil(px));
+      // tiny rim for wings
+      if (v === 3) {
+        ctx.strokeStyle = 'rgba(0,0,0,0.06)';
+        ctx.strokeRect(Math.round(x + rx*px), Math.round(y + ry*px), Math.ceil(px), Math.ceil(px));
+      }
     }
-
-    bgX -= 1.2;
-    if (bgX <= -50) bgX = 0;
-
-    // TEXT "GENSYN"
-    ctx.fillStyle = "rgba(255,255,255,0.08)";
-    ctx.font = "120px Arial Black";
-    ctx.textAlign = "center";
-    ctx.fillText("GENSYN", canvas.width / 2, canvas.height / 2);
+  }
+  // simple wings highlight
+  ctx.fillStyle = 'rgba(255,255,255,0.12)';
+  ctx.fillRect(x + px*3.6, y + px*1.2, px*2, px*1);
 }
 
-// DRAW BEE
-function drawBee() {
-    ctx.fillStyle = "yellow";
-    ctx.beginPath();
-    ctx.arc(bee.x, bee.y, bee.size, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = "black";
-    ctx.fillRect(bee.x - 10, bee.y - 10, 5, 20);
-    ctx.fillRect(bee.x + 5, bee.y - 10, 5, 20);
-}
-
-// GAME LOOP
-function gameLoop() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    drawBackground();
-
-    if (!gameStarted) {
-        ctx.fillStyle = "white";
-        ctx.font = "40px Arial";
-        ctx.fillText("Tap to Start 🐝", canvas.width / 2, canvas.height / 2 + 100);
-        requestAnimationFrame(gameLoop);
-        return;
+// draw pipes with ants pattern
+function drawPipes() {
+  const w = canvas.width/DPR, h = canvas.height/DPR;
+  ctx.fillStyle = '#ffb6c1'; // pipe color (pink)
+  pipes.forEach(pipe => {
+    // body
+    ctx.fillRect(pipe.x, 0, pipeWidth, pipe.top);
+    ctx.fillRect(pipe.x, pipe.top + pipeGap, pipeWidth, h - (pipe.top + pipeGap));
+    // ant pattern: tiny black dots crawling (alternating rows)
+    const antSize = 3;
+    const spacing = 8;
+    ctx.fillStyle = '#2b2b2b';
+    // top pipe ants
+    for (let yy = 8; yy < pipe.top - 4; yy += spacing) {
+      for (let ax = 4 + ((yy/spacing)%2)*4; ax < pipeWidth; ax += spacing) {
+        ctx.fillRect(pipe.x + ax, yy, antSize, antSize);
+      }
     }
-
-    bee.velocity += bee.gravity;
-    bee.y += bee.velocity;
-    drawBee();
-
-    ctx.fillStyle = "#ffb6c1";
-
-    pipes.forEach(pipe => {
-        pipe.x -= 3;
-        ctx.fillRect(pipe.x, 0, pipeWidth, pipe.topHeight);
-        ctx.fillRect(pipe.x, pipe.bottomY, pipeWidth, canvas.height - pipe.bottomY);
-
-        if (!pipe.counted && pipe.x + pipeWidth < bee.x) {
-            score++;
-            pipe.counted = true;
-            pointSound.play();
-        }
-
-        if (
-            bee.x + bee.size > pipe.x &&
-            bee.x - bee.size < pipe.x + pipeWidth &&
-            (bee.y - bee.size < pipe.topHeight || bee.y + bee.size > pipe.bottomY)
-        ) {
-            endGame();
-        }
-    });
-
-    if (bee.y + bee.size >= canvas.height || bee.y - bee.size <= 0) {
-        endGame();
+    // bottom pipe ants
+    for (let yy = pipe.top + pipeGap + 8; yy < h - 4; yy += spacing) {
+      for (let ax = 4 + ((yy/spacing)%2)*4; ax < pipeWidth; ax += spacing) {
+        ctx.fillRect(pipe.x + ax, yy, antSize, antSize);
+      }
     }
-
-    ctx.fillStyle = "white";
-    ctx.font = "35px Arial";
-    ctx.fillText("Score: " + score, 20, 50);
-
-    if (!gameOver) requestAnimationFrame(gameLoop);
+    // pipe edge shadow for depth
+    ctx.fillStyle = 'rgba(0,0,0,0.06)';
+    ctx.fillRect(pipe.x, 0, 6, pipe.top);
+    ctx.fillRect(pipe.x, pipe.top + pipeGap, 6, h - (pipe.top + pipeGap));
+  });
 }
 
-gameLoop();
-
-// END GAME
-function endGame() {
-    if (gameOver) return;
-
-    gameOver = true;
-    dieSound.play();
-
-    document.getElementById("shareBtn").style.display = "block";
-
-    ctx.fillStyle = "white";
-    ctx.font = "50px Arial";
-    ctx.textAlign = "center";
-    ctx.fillText("Game Over!", canvas.width / 2, canvas.height / 2);
-
-    setTimeout(() => location.reload(), 2500);
+// update logic & collisions
+function update(dt) {
+  if (!running || gameOver) return;
+  bee.vy += gravity;
+  bee.y += bee.vy;
+  // move pipes
+  for (let i = pipes.length-1; i >=0; i--) {
+    pipes[i].x -= pipeSpeed;
+    // score
+    if (!pipes[i].passed && pipes[i].x + pipeWidth < bee.x - 6) {
+      pipes[i].passed = true;
+      score++;
+      document.getElementById('sc').innerText = score;
+      try { pointSound.currentTime = 0; pointSound.play(); } catch(e){}
+    }
+    // remove offscreen
+    if (pipes[i].x + pipeWidth < -40) pipes.splice(i,1);
+  }
+  // collisions
+  for (let p of pipes) {
+    const left = p.x, right = p.x + pipeWidth;
+    const top = p.top, bottom = p.top + pipeGap;
+    const bx = bee.x, by = bee.y;
+    // simple circle-rect collision approx using bee bounding box
+    const bw = beePixel[0].length * scaleBee;
+    const bh = beePixel.length * scaleBee;
+    if (bx + bw*0.2 < right && bx + bw*0.8 > left) {
+      if (by < top || by + bh > bottom) {
+        triggerGameOver();
+      }
+    }
+  }
+  // top/bottom bounds
+  if (bee.y < -10 || bee.y + beePixel.length*scaleBee > canvas.height/DPR + 8) {
+    triggerGameOver();
+  }
 }
 
-// SHARE BUTTON
-document.getElementById("shareBtn").onclick = () => {
-    const msg = encodeURIComponent(`I scored ${score} in Flappy Bee! 🐝🔥`);
-    window.open(`https://twitter.com/intent/tweet?text=${msg}`, "_blank");
-};
+// game over
+function triggerGameOver() {
+  if (gameOver) return;
+  gameOver = true;
+  try { dieSound.currentTime = 0; dieSound.play(); } catch(e){}
+  document.getElementById('shareBtn').style.display = 'block';
+  setTimeout(()=>{ /* allow user to view game over */ }, 200);
+  // auto-reload after short delay
+  setTimeout(()=> {
+    // leave for user to share then reload
+  }, 2000);
+}
+
+// draw everything
+function render() {
+  const w = canvas.width/DPR, h = canvas.height/DPR;
+  // background
+  drawBackground();
+
+  // pipes
+  drawPipes();
+
+  // bee position update for drawing (some bob/tilt)
+  drawBee(bee.x, bee.y);
+
+  // score top-left drawn through hint element; but add big center score when not running
+  if (!running && !gameOver) {
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.font = '36px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('Tap/Space to Start — Flappy Bee', w/2, h*0.6 + 140);
+  }
+  if (gameOver) {
+    ctx.fillStyle = 'rgba(255,255,255,0.95)';
+    ctx.font = '48px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('Game Over', w/2, h/2);
+    ctx.font = '22px Arial';
+    ctx.fillText(`Score: ${score}`, w/2, h/2 + 40);
+  }
+}
+
+// main loop
+let last = performance.now();
+function loop(t) {
+  const dt = t - last;
+  last = t;
+  update(dt/1000);
+  render();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// init position
+function resetGame() {
+  running = false; gameOver = false; score = 0; document.getElementById('sc').innerText = score;
+  bee.y = canvas.height/DPR/2; bee.vy = 0;
+  pipes = [];
+  pipeTimer = 0;
+}
+resetGame();
+
+// spawn an initial pipe after small delay to show pillars on right
+setTimeout(() => spawnPipe(), 700);
+
+// share button
+document.getElementById('shareBtn').addEventListener('click', () => {
+  const msg = encodeURIComponent(`I scored ${score} in Flappy Bee! Check it out:`);
+  window.open(`https://twitter.com/intent/tweet?text=${msg}`, '_blank');
+});
+
+// allow restart by clicking after game over
+window.addEventListener('keydown', e => {
+  if (gameOver && (e.code === 'Space' || e.code === 'Enter')) {
+    resetGame();
+  }
+});
+window.addEventListener('touchstart', () => {
+  if (gameOver) resetGame();
+});
+
+// small accessibility: pause/play with P
+window.addEventListener('keydown', e => {
+  if (e.key === 'p' || e.key === 'P') {
+    running = !running;
+  }
+});
+
+// ensure initial draw on resize
+window.addEventListener('resize', () => {
+  // recompute bee size relative to medium
+  bee.w = beePixel[0].length * scaleBee;
+  bee.h = beePixel.length * scaleBee;
+});
+
 </script>
 </body>
 </html>
